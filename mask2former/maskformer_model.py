@@ -4,7 +4,6 @@ from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
-import torch.utils.checkpoint as checkpoint
 
 from detectron2.config import configurable
 from detectron2.data import MetadataCatalog
@@ -195,24 +194,9 @@ class MaskFormer(nn.Module):
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.size_divisibility)
 
-        # for param in self.backbone.parameters():
-        #     param.requires_grad = False
-
-        # for param in self.backbone.parameters():
-        #     param.requires_grad = False
-
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features)
 
-        
-        # def forward_pass_head(x):
-        #     return self.sem_seg_head(x)
-
-        # outputs = checkpoint.checkpoint(forward_pass_head, features)
-        # def forward_pass_head(x):
-        #     return self.sem_seg_head(x)
-
-        # outputs = checkpoint.checkpoint(forward_pass_head, features)
         if self.training:
             # mask classification target
             if "instances" in batched_inputs[0]:
@@ -280,35 +264,11 @@ class MaskFormer(nn.Module):
     def prepare_targets(self, targets, images):
         h_pad, w_pad = images.tensor.shape[-2:]
         new_targets = []
-        for targets_per_image, image in zip(targets, images):
+        for targets_per_image in targets:
             # pad gt
             gt_masks = targets_per_image.gt_masks
-            gt_masks = BitMasks.from_polygon_masks(gt_masks, image.shape[1], image.shape[0]).tensor
             padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
             padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
-            # keeped_indices = []
-            # coco_labels = []
-            # for i, comic_label in enumerate(targets_per_image.gt_classes.cpu().numpy()):
-            #     try:
-            #         coco_label = comic2coco(comic_label)
-            #         coco_labels.append(coco_label)
-            #         keeped_indices.append(i)
-            #     except IndexError:
-            #         pass
-            
-            # labels = torch.tensor(coco_labels)
-
-            # keeped_indices = []
-            # coco_labels = []
-            # for i, comic_label in enumerate(targets_per_image.gt_classes.cpu().numpy()):
-            #     try:
-            #         coco_label = comic2coco(comic_label)
-            #         coco_labels.append(coco_label)
-            #         keeped_indices.append(i)
-            #     except IndexError:
-            #         pass
-            
-            # labels = torch.tensor(coco_labels)
             new_targets.append(
                 {
                     "labels": targets_per_image.gt_classes,

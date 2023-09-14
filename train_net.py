@@ -4,6 +4,8 @@ MaskFormer Training Script.
 
 This script is a simplified version of the training script in detectron2/tools.
 """
+
+# Ignore specific warning message
 try:
     # ignore ShapelyDeprecationWarning from fvcore
     from shapely.errors import ShapelyDeprecationWarning
@@ -16,6 +18,9 @@ import copy
 import itertools
 import logging
 import os
+
+import wandb
+from collections import defaultdict
 
 from collections import OrderedDict
 from typing import Any, Dict, List, Set
@@ -63,6 +68,20 @@ class Trainer(DefaultTrainer):
     """
     Extension of the Trainer class adapted to MaskFormer.
     """
+    
+    @classmethod
+    def build_model(cls, cfg):
+        model = super().build_model(cfg)
+        for param in model.parameters():
+            param.requires_grad = False
+        def weight_reset(m):
+            if hasattr(m, 'reset_parameters'):
+                print(m)
+                m.reset_parameters()
+        model.sem_seg_head.predictor.apply(weight_reset)
+        for param in model.sem_seg_head.predictor.parameters():
+            param.requires_grad = True
+        return model
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -151,7 +170,7 @@ class Trainer(DefaultTrainer):
         # Semantic segmentation dataset mapper
         if cfg.INPUT.DATASET_MAPPER_NAME == "mask_former_semantic":
             mapper = MaskFormerSemanticDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
+            return build_detection_train_loader(cfg, mapper=mapper, prefetch_factor=2)
         # Panoptic segmentation dataset mapper
         elif cfg.INPUT.DATASET_MAPPER_NAME == "mask_former_panoptic":
             mapper = MaskFormerPanopticDatasetMapper(cfg, True)
@@ -163,7 +182,7 @@ class Trainer(DefaultTrainer):
         # coco instance segmentation lsj new baseline
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_instance_lsj":
             mapper = COCOInstanceNewBaselineDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
+            return build_detection_train_loader(cfg, mapper=mapper, prefetch_factor=2)
         # coco panoptic segmentation lsj new baseline
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_panoptic_lsj":
             mapper = COCOPanopticNewBaselineDatasetMapper(cfg, True)
@@ -295,9 +314,36 @@ def setup(args):
     return cfg
 
 
+def init_wandb(cfg):
+    wandb.init(
+        project="comic-seg",
+        config={
+            "lr": cfg.SOLVER.BASE_LR,
+            "batch_size": cfg.SOLVER.IMS_PER_BATCH
+        },
+        name="cityscapes-coco-swin_large-backbone"
+    )
+
+
+def log_wandb(trainer, cfg):    
+    log = defaultdict(list)
+    window_size = cfg.ONE_EPOCH
+    histories = trainer.storage.histories()
+    for k, v in histories.items():
+        val = v.values()
+        if 'loss' in k:
+            for i in range(0, len(val), window_size):
+                window = val[i:i+window_size]
+                window = [w[0] for w in window]
+                avg = sum(window) / len(window)
+                log[k].append(avg)
+                wandb.log({k: avg})
+    return log
+
+
 def main(args):
     cfg = setup(args)
-
+    init_wandb(cfg)
     if args.eval_only:
         model = Trainer.build_model(cfg)
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
@@ -312,7 +358,9 @@ def main(args):
 
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
-    return trainer.train()
+    trainer.train()
+    log_wandb(trainer, cfg)
+    wandb.finish()
 
 
 if __name__ == "__main__":
