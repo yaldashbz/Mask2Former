@@ -286,29 +286,6 @@ class MaskFormer(nn.Module):
             gt_masks = BitMasks.from_polygon_masks(gt_masks, image.shape[1], image.shape[0]).tensor
             padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
             padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
-            # keeped_indices = []
-            # coco_labels = []
-            # for i, comic_label in enumerate(targets_per_image.gt_classes.cpu().numpy()):
-            #     try:
-            #         coco_label = comic2coco(comic_label)
-            #         coco_labels.append(coco_label)
-            #         keeped_indices.append(i)
-            #     except IndexError:
-            #         pass
-            
-            # labels = torch.tensor(coco_labels)
-
-            # keeped_indices = []
-            # coco_labels = []
-            # for i, comic_label in enumerate(targets_per_image.gt_classes.cpu().numpy()):
-            #     try:
-            #         coco_label = comic2coco(comic_label)
-            #         coco_labels.append(coco_label)
-            #         keeped_indices.append(i)
-            #     except IndexError:
-            #         pass
-            
-            # labels = torch.tensor(coco_labels)
             new_targets.append(
                 {
                     "labels": targets_per_image.gt_classes,
